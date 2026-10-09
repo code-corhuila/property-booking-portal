@@ -5,7 +5,8 @@
   "scripts": {
     "start": "ng serve",
     "build": "ng build",
-    "test": "ng test --watch=false"
+    "test": "ng test --watch=false",
+    "mock": "node dev/mock-api.mjs"
   },
   "dependencies": {
     "@angular/common": "^21.2.0",
