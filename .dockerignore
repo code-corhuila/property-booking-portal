@@ -1,0 +1,8 @@
+# The image installs its own dependencies with npm ci and builds from source.
+node_modules
+dist
+.angular
+.git
+.github
+.env
+*.patch

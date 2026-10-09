@@ -1,0 +1,14 @@
+name: property-booking-portal
+
+services:
+  booking-portal:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    expose: ["80"]
+    networks: [platform]
+
+networks:
+  platform:
+    name: platform
+    external: true
