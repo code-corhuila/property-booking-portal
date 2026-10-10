@@ -45,13 +45,13 @@ describe('BookingApiService', () => {
     req.flush({});
   });
 
-  it('lists the Reservas of a page, always with limit=20', () => {
+  it('lists the Reservas of a page, always with limit=100, the most the API serves', () => {
     api.listReservas(3).subscribe();
     const req = http.expectOne((r) => r.url === '/api/v1/reservas');
     expect(req.request.method).toBe('GET');
     expect(req.request.params.get('page')).toBe('3');
-    expect(req.request.params.get('limit')).toBe('20');
-    req.flush({ data: [], meta: { page: 3, limit: 20, total: 0, totalPages: 0 } });
+    expect(req.request.params.get('limit')).toBe('100');
+    req.flush({ data: [], meta: { page: 3, limit: 100, total: 0, totalPages: 0 } });
   });
 
   it('reads one Reserva on /api/v1/reservas/{id}', () => {
