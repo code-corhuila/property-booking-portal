@@ -3,8 +3,8 @@ import { Injectable, inject } from '@angular/core';
 import { Observable } from 'rxjs';
 import { IniciarReservarRequest, Page, Propiedad, Reserva, SagaResponse } from '../model/booking';
 
-/** One page of "Mis reservas": design-system.md, "Data table / List". */
-export const PAGE_SIZE = 20;
+/** "Mis reservas" reads 100 at a time and groups them in its tabs (navigation-map.md, "Reserva state → tab"). */
+export const PAGE_SIZE = 100;
 
 /**
  * Typed calls to the workflow, booking and catalog endpoints. The injected HttpClient is
