@@ -13,7 +13,9 @@ const SAGA = '35920dc9-bd55-41a0-8e41-5832377383e5';
 const VILLA: Propiedad = {
   id: ID, titulo: 'Apartamento en Villa Del Mar', ciudad: 'Cartagena', precioNocheCents: 50000000, moneda: 'COP', capacidad: 6,
 };
-const URL = `/reservas/checkout/confirmar?propiedadId=${ID}&fechaInicio=2099-11-20&fechaFin=2099-11-23&huespedes=2`;
+const STAY = `propiedadId=${ID}&fechaInicio=2099-11-20&fechaFin=2099-11-23&huespedes=2`;
+// The payment portal sends the method and the token in the route.
+const URL = `/reservas/checkout/confirmar?${STAY}&metodoPago=TARJETA_DEBITO&tokenPago=tok_visa`;
 const apiError = (status: number, userMessage: string): ApiError =>
   ({ status, code: 'X', message: 'x', details: [], traceId: 'abc', userMessage });
 
@@ -81,14 +83,13 @@ describe('CheckoutSummaryPageComponent', () => {
     expect(text()).toContain('$500.000 COP × 3 noches');
     expect(Array.from(element().querySelectorAll('.total')).map((e) => e.textContent)).toEqual(['Total', '$1.500.000 COP']);
     expect(text()).not.toMatch(/tarifa|impuesto/i);
-    expect(text()).toContain('Pago de prueba (desarrollo)');
+    expect(text()).not.toContain('Pago de prueba');
     expect(text()).toContain('Al confirmar se hará el cobro');
   });
 
-  it('starts the Saga with the stay, the method chosen and the test token, and disables the button meanwhile', async () => {
+  it('starts the Saga with the stay and the method and token of the route, and disables the button meanwhile', async () => {
     await open();
     await loaded();
-    element().querySelector<HTMLInputElement>('input[value=TARJETA_DEBITO]')!.click();
     await confirm();
     expect(sent).toHaveLength(1);
     expect(sent[0].body).toEqual({
@@ -100,12 +101,23 @@ describe('CheckoutSummaryPageComponent', () => {
     expect(button().textContent).toContain('Procesando tu reserva');
   });
 
-  it('sends the declined test token when the guest picks "Tarjeta de prueba rechazada"', async () => {
-    await open();
+  it('sends the token the payment portal put in the route', async () => {
+    await open(`/reservas/checkout/confirmar?${STAY}&metodoPago=TARJETA_CREDITO&tokenPago=tok_chargeDeclined`);
     await loaded();
-    element().querySelector<HTMLInputElement>('input[value=declined]')!.click();
     await confirm();
-    expect(sent[0].body.tokenPago).toBe('tok_chargeDeclined');
+    expect(sent[0].body).toMatchObject({ metodoPago: 'TARJETA_CREDITO', tokenPago: 'tok_chargeDeclined' });
+  });
+
+  it('without a payment method links to the payment step, keeping the booking, and never starts the Saga', async () => {
+    await open(`/reservas/checkout/confirmar?${STAY}`);
+    await loaded();
+    expect(text()).toContain('Primero elige el método de pago.');
+    expect(element().querySelector('button.primary')).toBeNull();
+    const link = element().querySelector<HTMLAnchorElement>('a[href^="/reservas/checkout/pago"]')!;
+    expect(link.getAttribute('href'))
+      .toBe(`/reservas/checkout/pago?propiedadId=${ID}&fechaInicio=2099-11-20&fechaFin=2099-11-23&huespedes=2`);
+    harness.routeDebugElement!.componentInstance.confirm();
+    expect(sent).toHaveLength(0);
   });
 
   it('opens the result of the Saga whatever its status', async () => {

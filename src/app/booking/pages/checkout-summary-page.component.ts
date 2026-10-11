@@ -1,6 +1,5 @@
 import { Component, DestroyRef, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { Subscription } from 'rxjs';
 import { asApiError } from '../../shell-contract';
@@ -15,18 +14,18 @@ type View =
   | { state: 'missing' }
   | { state: 'ready'; propiedad: Propiedad };
 type Stay = Pick<IniciarReservarRequest, 'propiedadId' | 'fechaInicio' | 'fechaFin' | 'huespedes'>;
+type Payment = Pick<IniciarReservarRequest, 'metodoPago' | 'tokenPago'>;
+
+const METODOS: readonly MetodoPago[] = ['TARJETA_CREDITO', 'TARJETA_DEBITO'];
 
 /**
- * DEVELOPMENT ONLY: public test tokens of the payment gateway, one approved and one declined.
- * The payment step (/reservas/checkout/pago) belongs to the payment portal, which does not
- * exist yet; when it does, this screen reads the method and the token from it.
+ * Checkout summary (/reservas/checkout/confirmar): the recap and "Confirmar y pagar" (POST /sagas/reservar).
+ * The payment method and its token come in the route from the payment step, /reservas/checkout/pago,
+ * which belongs to the payment portal (navigation-map.md, Flow 1).
  */
-const DEV_TOKENS = { approved: 'tok_visa', declined: 'tok_chargeDeclined' } as const;
-
-/** Checkout summary (/reservas/checkout/confirmar): the recap and "Confirmar y pagar" (POST /sagas/reservar). */
 @Component({
   selector: 'app-checkout-summary-page',
-  imports: [FormsModule, RouterLink],
+  imports: [RouterLink],
   template: `
     @let v = view();
     <article class="card">
@@ -51,21 +50,18 @@ const DEV_TOKENS = { approved: 'tok_visa', declined: 'tok_chargeDeclined' } as c
             <dd>{{ money(total(p), p) }}</dd>
             <dt class="total">Total</dt><dd class="total">{{ money(total(p), p) }}</dd>
           </dl>
-          <fieldset>
-            <legend>Pago de prueba (desarrollo)</legend>
-            <label><input type="radio" name="metodo" value="TARJETA_CREDITO" [(ngModel)]="metodo" [disabled]="sending()" /> Tarjeta de crédito</label>
-            <label><input type="radio" name="metodo" value="TARJETA_DEBITO" [(ngModel)]="metodo" [disabled]="sending()" /> Tarjeta de débito</label>
-            <label><input type="radio" name="tarjeta" value="approved" [(ngModel)]="card" [disabled]="sending()" /> Tarjeta de prueba aprobada</label>
-            <label><input type="radio" name="tarjeta" value="declined" [(ngModel)]="card" [disabled]="sending()" /> Tarjeta de prueba rechazada</label>
-            <p class="muted">Se usan las tarjetas de prueba de la pasarela: no se cobra dinero real.</p>
-          </fieldset>
           @if (failure(); as message) {
             <div role="alert"><p class="error">{{ message }}</p>
               <a [routerLink]="['/propiedades', s.propiedadId, 'reservar']" [queryParams]="back()">Cambiar fechas o huéspedes</a></div>
           }
-          <p class="muted">Al confirmar se hará el cobro.</p>
-          <button type="button" class="primary" [disabled]="sending()" [attr.aria-busy]="sending()" (click)="confirm()">
-            {{ sending() ? 'Procesando tu reserva…' : failure() ? 'Reintentar' : 'Confirmar y pagar' }}</button>
+          @if (payment) {
+            <p class="muted">Al confirmar se hará el cobro.</p>
+            <button type="button" class="primary" [disabled]="sending()" [attr.aria-busy]="sending()" (click)="confirm()">
+              {{ sending() ? 'Procesando tu reserva…' : failure() ? 'Reintentar' : 'Confirmar y pagar' }}</button>
+          } @else {
+            <p>Primero elige el método de pago.
+              <a routerLink="/reservas/checkout/pago" [queryParams]="s">Elegir el método de pago</a></p>
+          }
         }
       }
     </article>
@@ -73,8 +69,6 @@ const DEV_TOKENS = { approved: 'tok_visa', declined: 'tok_chargeDeclined' } as c
   styles: [PAGE_STYLES, `
     .recap { display: grid; grid-template-columns: auto 1fr; gap: var(--space-4); align-items: center; }
     .recap img { width: var(--space-16); aspect-ratio: 1; object-fit: cover; border-radius: var(--radius-md); }
-    fieldset { display: grid; gap: var(--space-2); padding: var(--space-4); border: solid var(--color-neutral-100); border-radius: var(--radius-lg); }
-    legend { font-weight: var(--font-weight-bold); }
   `],
 })
 export class CheckoutSummaryPageComponent {
@@ -85,12 +79,12 @@ export class CheckoutSummaryPageComponent {
   /** One key per intention: created when the screen opens, sent again by every retry (navigation-map.md, Flow 1). */
   private readonly key = crypto.randomUUID();
   readonly stay: Stay | null;
+  /** Null until the payment portal sends the method and the token: then there is nothing to charge. */
+  readonly payment: Payment | null;
 
   readonly view = signal<View>({ state: 'loading' });
   readonly sending = signal(false);
   readonly failure = signal<string | null>(null);
-  metodo: MetodoPago = 'TARJETA_CREDITO';
-  card: keyof typeof DEV_TOKENS = 'approved';
 
   constructor() {
     const query = inject(ActivatedRoute).snapshot.queryParamMap;
@@ -100,6 +94,8 @@ export class CheckoutSummaryPageComponent {
     const valid = propiedadId && isDate(fechaInicio) && isDate(fechaFin) && fechaFin > fechaInicio
       && Number.isInteger(huespedes) && huespedes >= 1;
     this.stay = valid ? { propiedadId, fechaInicio, fechaFin, huespedes } : null;
+    const [metodoPago, tokenPago] = [query.get('metodoPago') as MetodoPago | null, query.get('tokenPago')];
+    this.payment = metodoPago && METODOS.includes(metodoPago) && tokenPago ? { metodoPago, tokenPago } : null;
     // Without the data of the booking form there is nothing to confirm.
     if (this.stay) this.load();
     else void this.router.navigate(['/explorar']);
@@ -141,9 +137,10 @@ export class CheckoutSummaryPageComponent {
 
   /** 201 and 200 (a retry with the same key) are alike: both bring the Saga, and the result screen reads it. */
   confirm(): void {
+    if (!this.payment) return;
     this.sending.set(true);
     this.failure.set(null);
-    const body: IniciarReservarRequest = { ...this.stay!, metodoPago: this.metodo, tokenPago: DEV_TOKENS[this.card] };
+    const body: IniciarReservarRequest = { ...this.stay!, ...this.payment };
     this.api.reservar(body, this.key).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (saga) => void this.router.navigate(['/reservas/checkout/resultado', saga.id]),
       error: (err: unknown) => {

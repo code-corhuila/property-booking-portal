@@ -15,6 +15,8 @@ Documentation: [`property-docs`](https://github.com/code-corhuila/property-docs)
 injector and receives its client with the interceptor (gateway URL, token, `X-Correlation-Id`, time limit,
 one error shape: `src/app/shell-contract.ts`). A client of its own would send requests without the interceptor.
 
+**The payment method comes from the payment portal, in the route:** "Continuar al pago" opens `/reservas/checkout/pago` (`property-payment-portal`), which sends `metodoPago` and `tokenPago` to `/reservas/checkout/confirmar`.
+
 `package.json` and `package-lock.json` hold the same versions as `property-front`: the
 shared libraries are strict singletons, so a different Angular does not load.
 

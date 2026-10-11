@@ -16,7 +16,7 @@ type View =
   | { state: 'ready'; propiedad: Propiedad };
 type Field = 'fechaInicio' | 'fechaFin' | 'huespedes';
 
-/** Booking form (/propiedades/:propiedadId/reservar): dates and guests, then the checkout summary. */
+/** Booking form (/propiedades/:propiedadId/reservar): dates and guests, then the payment step of the payment portal. */
 @Component({
   selector: 'app-booking-form-page',
   imports: [ReactiveFormsModule, RouterLink],
@@ -157,12 +157,12 @@ export class BookingFormPageComponent {
       ? null : `Indica entre 1 y ${this.maxGuests(p)} huéspedes`;
   }
 
-  /** The data travels to the summary in the route: nothing is written to the browser's storage. */
+  /** The data travels to the payment step in the route: nothing is written to the browser's storage. */
   submit(p: Propiedad): void {
     this.submitted.set(true);
     if ((['fechaInicio', 'fechaFin', 'huespedes'] as const).some((f) => this.error(f, p))) return;
     const { fechaInicio, fechaFin, huespedes } = this.form.getRawValue();
-    void this.router.navigate(['/reservas/checkout/confirmar'], {
+    void this.router.navigate(['/reservas/checkout/pago'], {
       queryParams: { propiedadId: p.id, fechaInicio, fechaFin, huespedes },
     });
   }
