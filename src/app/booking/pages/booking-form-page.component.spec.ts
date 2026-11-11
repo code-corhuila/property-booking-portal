@@ -117,14 +117,14 @@ describe('BookingFormPageComponent', () => {
     expect(element().querySelector('#huespedes-error')?.textContent).toBe('Indica entre 1 y 3 huéspedes');
   });
 
-  it('goes to the checkout summary with the data in the route', async () => {
+  it('goes to the payment step with the data in the route', async () => {
     await open();
     await answer(VILLA);
     await type('fechaInicio', '2099-11-20');
     await type('fechaFin', '2099-11-23');
     await type('huespedes', '2');
     await submit();
-    expect(navigate).toHaveBeenCalledWith(['/reservas/checkout/confirmar'], {
+    expect(navigate).toHaveBeenCalledWith(['/reservas/checkout/pago'], {
       queryParams: { propiedadId: ID, fechaInicio: '2099-11-20', fechaFin: '2099-11-23', huespedes: 2 },
     });
   });

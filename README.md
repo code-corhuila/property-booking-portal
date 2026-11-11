@@ -15,6 +15,12 @@ Documentation: [`property-docs`](https://github.com/code-corhuila/property-docs)
 injector and receives its client with the interceptor (gateway URL, token, `X-Correlation-Id`, time limit,
 one error shape: `src/app/shell-contract.ts`). A client of its own would send requests without the interceptor.
 
+**The checkout** (`navigation-map.md`, Flow 1): the booking form → "Método de pago" of
+`property-payment-portal` (`/reservas/checkout/pago`) → the summary here
+(`/reservas/checkout/confirmar`), which receives the stay and `metodoPago` in the query string
+and `tokenPago` in the navigation state, never in the URL, and starts the Saga. Without a
+token the summary sends the guest back to the payment step.
+
 `package.json` and `package-lock.json` hold the same versions as `property-front`: the
 shared libraries are strict singletons, so a different Angular does not load.
 
