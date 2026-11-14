@@ -16,7 +16,7 @@ type View =
   | { state: 'ready'; propiedad: Propiedad };
 type Field = 'fechaInicio' | 'fechaFin' | 'huespedes';
 
-/** Booking form (/propiedades/:propiedadId/reservar): dates and guests, then the payment step of the payment portal. */
+/** Booking form (/propiedades/:propiedadId/reservar): dates and guests, then the payment method. */
 @Component({
   selector: 'app-booking-form-page',
   imports: [ReactiveFormsModule, RouterLink],
