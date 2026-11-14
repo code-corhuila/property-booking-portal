@@ -14,15 +14,10 @@ type View =
   | { state: 'missing' }
   | { state: 'ready'; propiedad: Propiedad };
 type Stay = Pick<IniciarReservarRequest, 'propiedadId' | 'fechaInicio' | 'fechaFin' | 'huespedes'>;
-type Payment = Pick<IniciarReservarRequest, 'metodoPago' | 'tokenPago'>;
 
-const METODOS: readonly MetodoPago[] = ['TARJETA_CREDITO', 'TARJETA_DEBITO'];
+const METODOS: Record<MetodoPago, string> = { TARJETA_CREDITO: 'Tarjeta de crédito', TARJETA_DEBITO: 'Tarjeta de débito' };
 
-/**
- * Checkout summary (/reservas/checkout/confirmar): the recap and "Confirmar y pagar" (POST /sagas/reservar).
- * The payment method and its token come in the route from the payment step, /reservas/checkout/pago,
- * which belongs to the payment portal (navigation-map.md, Flow 1).
- */
+/** Checkout summary (/reservas/checkout/confirmar): the recap and "Confirmar y pagar" (POST /sagas/reservar). */
 @Component({
   selector: 'app-checkout-summary-page',
   imports: [RouterLink],
@@ -50,18 +45,15 @@ const METODOS: readonly MetodoPago[] = ['TARJETA_CREDITO', 'TARJETA_DEBITO'];
             <dd>{{ money(total(p), p) }}</dd>
             <dt class="total">Total</dt><dd class="total">{{ money(total(p), p) }}</dd>
           </dl>
+          <p class="method">Pago con {{ metodoLabel() }}.
+            <a routerLink="/reservas/checkout/pago" [queryParams]="stayParams()">Cambiar método de pago</a></p>
           @if (failure(); as message) {
             <div role="alert"><p class="error">{{ message }}</p>
               <a [routerLink]="['/propiedades', s.propiedadId, 'reservar']" [queryParams]="back()">Cambiar fechas o huéspedes</a></div>
           }
-          @if (payment) {
-            <p class="muted">Al confirmar se hará el cobro.</p>
-            <button type="button" class="primary" [disabled]="sending()" [attr.aria-busy]="sending()" (click)="confirm()">
-              {{ sending() ? 'Procesando tu reserva…' : failure() ? 'Reintentar' : 'Confirmar y pagar' }}</button>
-          } @else {
-            <p>Primero elige el método de pago.
-              <a routerLink="/reservas/checkout/pago" [queryParams]="s">Elegir el método de pago</a></p>
-          }
+          <p class="muted">Al confirmar se hará el cobro.</p>
+          <button type="button" class="primary" [disabled]="sending()" [attr.aria-busy]="sending()" (click)="confirm()">
+            {{ sending() ? 'Procesando tu reserva…' : failure() ? 'Reintentar' : 'Confirmar y pagar' }}</button>
         }
       }
     </article>
@@ -69,6 +61,7 @@ const METODOS: readonly MetodoPago[] = ['TARJETA_CREDITO', 'TARJETA_DEBITO'];
   styles: [PAGE_STYLES, `
     .recap { display: grid; grid-template-columns: auto 1fr; gap: var(--space-4); align-items: center; }
     .recap img { width: var(--space-16); aspect-ratio: 1; object-fit: cover; border-radius: var(--radius-md); }
+    .method { padding: var(--space-4); border: solid var(--color-neutral-100); border-radius: var(--radius-lg); }
   `],
 })
 export class CheckoutSummaryPageComponent {
@@ -79,12 +72,12 @@ export class CheckoutSummaryPageComponent {
   /** One key per intention: created when the screen opens, sent again by every retry (navigation-map.md, Flow 1). */
   private readonly key = crypto.randomUUID();
   readonly stay: Stay | null;
-  /** Null until the payment portal sends the method and the token: then there is nothing to charge. */
-  readonly payment: Payment | null;
 
   readonly view = signal<View>({ state: 'loading' });
   readonly sending = signal(false);
   readonly failure = signal<string | null>(null);
+  /** From the payment portal: the method in the query string, the token in the navigation state. */
+  private readonly payment: { metodoPago: MetodoPago; tokenPago: string } | null;
 
   constructor() {
     const query = inject(ActivatedRoute).snapshot.queryParamMap;
@@ -94,11 +87,22 @@ export class CheckoutSummaryPageComponent {
     const valid = propiedadId && isDate(fechaInicio) && isDate(fechaFin) && fechaFin > fechaInicio
       && Number.isInteger(huespedes) && huespedes >= 1;
     this.stay = valid ? { propiedadId, fechaInicio, fechaFin, huespedes } : null;
-    const [metodoPago, tokenPago] = [query.get('metodoPago') as MetodoPago | null, query.get('tokenPago')];
-    this.payment = metodoPago && METODOS.includes(metodoPago) && tokenPago ? { metodoPago, tokenPago } : null;
-    // Without the data of the booking form there is nothing to confirm.
-    if (this.stay) this.load();
-    else void this.router.navigate(['/explorar']);
+    const metodoPago = query.get('metodoPago') as MetodoPago | null;
+    const state = (this.router.getCurrentNavigation()?.extras.state ?? history.state) as { tokenPago?: unknown } | null;
+    const tokenPago = typeof state?.tokenPago === 'string' ? state.tokenPago : null;
+    this.payment = metodoPago && metodoPago in METODOS && tokenPago ? { metodoPago, tokenPago } : null;
+    // Without the data of the booking form there is nothing to confirm; without a card, the payment step.
+    if (!this.stay) void this.router.navigate(['/explorar']);
+    else if (!this.payment) void this.router.navigate(['/reservas/checkout/pago'], { queryParams: this.stayParams() });
+    else this.load();
+  }
+
+  metodoLabel(): string {
+    return METODOS[this.payment!.metodoPago];
+  }
+
+  stayParams(): Stay {
+    return this.stay!;
   }
 
   load(): void {
@@ -137,10 +141,9 @@ export class CheckoutSummaryPageComponent {
 
   /** 201 and 200 (a retry with the same key) are alike: both bring the Saga, and the result screen reads it. */
   confirm(): void {
-    if (!this.payment) return;
     this.sending.set(true);
     this.failure.set(null);
-    const body: IniciarReservarRequest = { ...this.stay!, ...this.payment };
+    const body: IniciarReservarRequest = { ...this.stay!, ...this.payment! };
     this.api.reservar(body, this.key).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (saga) => void this.router.navigate(['/reservas/checkout/resultado', saga.id]),
       error: (err: unknown) => {
