@@ -13,7 +13,8 @@ const SAGA = '35920dc9-bd55-41a0-8e41-5832377383e5';
 const VILLA: Propiedad = {
   id: ID, titulo: 'Apartamento en Villa Del Mar', ciudad: 'Cartagena', precioNocheCents: 50000000, moneda: 'COP', capacidad: 6,
 };
-const URL = `/reservas/checkout/confirmar?propiedadId=${ID}&fechaInicio=2099-11-20&fechaFin=2099-11-23&huespedes=2`;
+const STAY = `propiedadId=${ID}&fechaInicio=2099-11-20&fechaFin=2099-11-23&huespedes=2`;
+const URL = `/reservas/checkout/confirmar?${STAY}&metodoPago=TARJETA_DEBITO`;
 const apiError = (status: number, userMessage: string): ApiError =>
   ({ status, code: 'X', message: 'x', details: [], traceId: 'abc', userMessage });
 
@@ -23,7 +24,8 @@ describe('CheckoutSummaryPageComponent', () => {
   let harness: RouterTestingHarness;
   let navigate: ReturnType<typeof vi.spyOn>;
 
-  async function open(url = URL): Promise<void> {
+  /** As the payment portal navigates here: the token travels in the navigation state. */
+  async function open(url = URL, tokenPago: string | null = 'tok_visa'): Promise<void> {
     const api = {
       getPropiedad: () => { const answer = new Subject<Propiedad>(); propiedades.push(answer); return answer; },
       reservar: (body: IniciarReservarRequest, key: string) => {
@@ -40,7 +42,9 @@ describe('CheckoutSummaryPageComponent', () => {
       ],
     });
     navigate = vi.spyOn(Router.prototype, 'navigate').mockResolvedValue(true);
-    harness = await RouterTestingHarness.create(url);
+    harness = await RouterTestingHarness.create();
+    await TestBed.inject(Router).navigateByUrl(url, tokenPago ? { state: { tokenPago } } : {});
+    await harness.fixture.whenStable();
   }
 
   beforeEach(() => ((propiedades = []), (sent = [])));
@@ -81,14 +85,14 @@ describe('CheckoutSummaryPageComponent', () => {
     expect(text()).toContain('$500.000 COP × 3 noches');
     expect(Array.from(element().querySelectorAll('.total')).map((e) => e.textContent)).toEqual(['Total', '$1.500.000 COP']);
     expect(text()).not.toMatch(/tarifa|impuesto/i);
-    expect(text()).toContain('Pago de prueba (desarrollo)');
+    expect(text()).not.toContain('desarrollo');   // the development selector is gone: the payment portal chose the card
     expect(text()).toContain('Al confirmar se hará el cobro');
   });
 
-  it('starts the Saga with the stay, the method chosen and the test token, and disables the button meanwhile', async () => {
+  it('starts the Saga with the stay and the method and token of the payment step, and disables the button meanwhile', async () => {
     await open();
     await loaded();
-    element().querySelector<HTMLInputElement>('input[value=TARJETA_DEBITO]')!.click();
+    expect(text()).toContain('Pago con Tarjeta de débito');
     await confirm();
     expect(sent).toHaveLength(1);
     expect(sent[0].body).toEqual({
@@ -100,12 +104,19 @@ describe('CheckoutSummaryPageComponent', () => {
     expect(button().textContent).toContain('Procesando tu reserva');
   });
 
-  it('sends the declined test token when the guest picks "Tarjeta de prueba rechazada"', async () => {
-    await open();
+  it('sends whatever token the payment portal handed on', async () => {
+    await open(URL, 'tok_chargeDeclined');
     await loaded();
-    element().querySelector<HTMLInputElement>('input[value=declined]')!.click();
     await confirm();
     expect(sent[0].body.tokenPago).toBe('tok_chargeDeclined');
+  });
+
+  it('without a card, goes back to the payment step with the stay', async () => {
+    await open(URL, null);
+    expect(propiedades).toHaveLength(0);
+    expect(navigate).toHaveBeenCalledWith(['/reservas/checkout/pago'], {
+      queryParams: { propiedadId: ID, fechaInicio: '2099-11-20', fechaFin: '2099-11-23', huespedes: 2 },
+    });
   });
 
   it('opens the result of the Saga whatever its status', async () => {
